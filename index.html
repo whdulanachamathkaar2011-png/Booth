@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>us — a little photobooth for two</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fbf1ee; --card:#ffffff; --ink:#2b1f1c; --accent:#e78ea3; --accent-soft:#f7d9e0; --muted:#9a8580;
+  }
+  body.theme-cream{ --bg:#f5efe4; --accent:#c9a97e; --accent-soft:#ecdfc7; }
+  body.theme-blue{ --bg:#e9f1f7; --accent:#6fa3c7; --accent-soft:#cfe4f0; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:var(--bg); color:var(--ink); font-family:'Inter',sans-serif; transition: background .4s; }
+  h1,h2,.brand{ font-family:'Fraunces',serif; }
+  #app{ min-height:100%; display:flex; flex-direction:column; align-items:center; padding:22px 16px 40px; }
+  .brand{ font-size:22px; font-weight:600; margin:0 0 4px; }
+  .sub{ color:var(--muted); font-size:13.5px; margin:0 0 22px; text-align:center; max-width:320px; }
+  .screen{ display:none; width:100%; max-width:480px; flex-direction:column; align-items:center; }
+  .screen.active{ display:flex; }
+  .card{ background:var(--card); border-radius:22px; padding:22px; width:100%; box-shadow:0 10px 30px rgba(0,0,0,0.06); }
+  button{ font-family:'Inter',sans-serif; border:none; cursor:pointer; }
+  .btn{ background:var(--accent); color:#fff; padding:14px 26px; border-radius:30px; font-weight:600; font-size:14.5px; }
+  .btn:active{ transform:scale(0.97); }
+  .btn.secondary{ background:var(--accent-soft); color:var(--ink); }
+  .linkbox{ display:flex; gap:8px; margin:16px 0; }
+  .linkbox input{ flex:1; padding:12px 14px; border-radius:14px; border:1px solid var(--accent-soft); font-size:13px; }
+  .theme-row{ display:flex; gap:10px; margin:18px 0; justify-content:center; }
+  .theme-dot{ width:52px; height:52px; border-radius:50%; border:3px solid transparent; cursor:pointer; }
+  .theme-dot.selected{ border-color: var(--ink); }
+  .theme-dot[data-t="pink"]{ background:#f3b6c5; }
+  .theme-dot[data-t="cream"]{ background:#d9c39a; }
+  .theme-dot[data-t="blue"]{ background:#9cc3dd; }
+  .videos{ position:relative; width:100%; aspect-ratio:4/3; border-radius:18px; overflow:hidden; background:#111; display:flex; }
+  .videos video{ width:50%; height:100%; object-fit:cover; background:#222; }
+  #localVideo{ transform:scaleX(-1); }
+  .status{ font-size:13px; color:var(--muted); margin-top:14px; text-align:center; }
+  .countdown{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:90px; color:#fff; font-family:'Fraunces',serif; text-shadow:0 4px 20px rgba(0,0,0,0.5); pointer-events:none; }
+  .flash{ position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; }
+  .controls{ display:flex; gap:10px; margin-top:16px; }
+  .strip-preview{ background:var(--accent-soft); border-radius:18px; padding:16px; display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .strip-preview canvas{ max-width:100%; border-radius:10px; box-shadow:0 6px 18px rgba(0,0,0,0.15); }
+  .filters{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:6px; }
+  .filters button{ background:#fff; padding:8px 14px; border-radius:20px; font-size:13px; }
+  .filters button.active{ background:var(--ink); color:#fff; }
+  .hidden{ display:none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="brand">🫧 us</div>
+  <p class="sub">a little online photobooth for when you're far apart</p>
+
+  <!-- SCREEN 1: share link -->
+  <div class="screen active" id="screen-share">
+    <div class="card">
+      <h2 style="margin-top:0">Waiting for your partner…</h2>
+      <p class="sub" style="text-align:left;max-width:none">Send them this link. As soon as they open it, you'll both see each other.</p>
+      <div class="linkbox">
+        <input id="roomLink" readonly />
+        <button class="btn secondary" onclick="copyLink()">Copy</button>
+      </div>
+      <div class="status" id="shareStatus">Turning on your camera…</div>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: theme pick -->
+  <div class="screen" id="screen-theme">
+    <div class="card" style="text-align:center">
+      <h2 style="margin-top:0">Pick a theme</h2>
+      <div class="theme-row">
+        <div class="theme-dot" data-t="pink" onclick="chooseTheme('pink')"></div>
+        <div class="theme-dot" data-t="cream" onclick="chooseTheme('cream')"></div>
+        <div class="theme-dot" data-t="blue" onclick="chooseTheme('blue')"></div>
+      </div>
+      <button class="btn" onclick="goToBooth()">Continue</button>
+    </div>
+  </div>
+
+  <!-- SCREEN 3: booth -->
+  <div class="screen" id="screen-booth">
+    <div class="videos" id="videosWrap">
+      <video id="localVideo" autoplay playsinline muted></video>
+      <video id="remoteVideo" autoplay playsinline></video>
+      <div class="countdown hidden" id="countdown"></div>
+      <div class="flash" id="flash"></div>
+    </div>
+    <div class="status" id="boothStatus">Both connected. Ready when you are 💛</div>
+    <div class="controls">
+      <button class="btn" id="startBtn" onclick="startSequence()">Start photobooth</button>
+    </div>
+  </div>
+
+  <!-- SCREEN 4: review -->
+  <div class="screen" id="screen-review">
+    <div class="strip-preview">
+      <canvas id="stripCanvas"></canvas>
+      <div class="filters">
+        <button data-f="none" class="active" onclick="setFilter('none')">Original</button>
+        <button data-f="mono" onclick="setFilter('mono')">Mono</button>
+        <button data-f="retro" onclick="setFilter('retro')">Retro</button>
+        <button data-f="film" onclick="setFilter('film')">Film</button>
+      </div>
+      <button class="btn" style="margin-top:8px" onclick="downloadStrip()">Save photo strip</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+/* ---------- room / URL handling ---------- */
+const params = new URLSearchParams(location.search);
+let room = params.get('room');
+if (!room) {
+  room = Math.random().toString(36).slice(2, 7).toUpperCase();
+  const newUrl = location.origin + location.pathname + '?room=' + room;
+  history.replaceState({}, '', newUrl);
+}
+const hostId = 'us-booth-' + room.toLowerCase();
+document.getElementById('roomLink').value = location.href;
+
+function copyLink() {
+  const input = document.getElementById('roomLink');
+  input.select(); input.setSelectionRange(0, 999);
+  navigator.clipboard?.writeText(input.value);
+  document.getElementById('shareStatus').textContent = 'Link copied — send it over!';
+}
+
+/* ---------- state ---------- */
+let peer, conn, mediaConn, localStream, isHost = false, connected = false, selectedTheme = 'pink';
+const localVideo = document.getElementById('localVideo');
+const remoteVideo = document.getElementById('remoteVideo');
+const shots = []; // dataURLs of captured composite frames
+let currentFilter = 'none';
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* ---------- camera + peer setup ---------- */
+navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+  .then(stream => {
+    localStream = stream;
+    localVideo.srcObject = stream;
+    connectPeer();
+  })
+  .catch(err => {
+    document.getElementById('shareStatus').textContent =
+      'Could not access camera (' + err.message + '). Check browser permissions.';
+  });
+
+function connectPeer() {
+  peer = new Peer(hostId, { debug: 1 });
+
+  peer.on('open', () => {
+    isHost = true;
+    document.getElementById('shareStatus').textContent = 'Link ready — waiting for your partner…';
+  });
+
+  peer.on('error', err => {
+    if (err.type === 'unavailable-id') {
+      // someone's already host — join as guest
+      peer = new Peer(undefined, { debug: 1 });
+      setupPeerHandlers();
+      peer.on('open', () => { isHost = false; joinHost(); });
+    } else {
+      console.error(err);
+    }
+  });
+
+  setupPeerHandlers();
+}
+
+function setupPeerHandlers() {
+  peer.on('connection', c => {
+    conn = c;
+    conn.on('data', handleData);
+    conn.on('open', onConnected);
+  });
+  peer.on('call', call => {
+    mediaConn = call;
+    call.answer(localStream);
+    call.on('stream', rs => { remoteVideo.srcObject = rs; });
+  });
+}
+
+function joinHost() {
+  conn = peer.connect(hostId);
+  conn.on('data', handleData);
+  conn.on('open', onConnected);
+  mediaConn = peer.call(hostId, localStream);
+  mediaConn.on('stream', rs => { remoteVideo.srcObject = rs; });
+}
+
+function onConnected() {
+  connected = true;
+  showScreen('screen-theme');
+}
+
+function sendData(obj) { if (conn && conn.open) conn.send(obj); }
+
+function handleData(data) {
+  if (data.type === 'theme') applyTheme(data.theme, false);
+  if (data.type === 'start') runSequence(data.t0);
+}
+
+/* ---------- theme ---------- */
+function chooseTheme(t) {
+  document.querySelectorAll('.theme-dot').forEach(d => d.classList.toggle('selected', d.dataset.t === t));
+  selectedTheme = t;
+  applyTheme(t, true);
+}
+function applyTheme(t, broadcast) {
+  selectedTheme = t;
+  document.body.className = 'theme-' + t;
+  document.querySelectorAll('.theme-dot').forEach(d => d.classList.toggle('selected', d.dataset.t === t));
+  if (broadcast) sendData({ type: 'theme', theme: t });
+}
+function goToBooth() { showScreen('screen-booth'); }
+
+/* ---------- countdown + capture ---------- */
+const SHOT_COUNT = 4;
+const SHOT_GAP_MS = 4000;
+const FIRST_DELAY_MS = 1500;
+
+function startSequence() {
+  const t0 = Date.now() + FIRST_DELAY_MS;
+  sendData({ type: 'start', t0 });
+  runSequence(t0);
+}
+
+function runSequence(t0) {
+  document.getElementById('startBtn').classList.add('hidden');
+  shots.length = 0;
+  for (let i = 0; i < SHOT_COUNT; i++) {
+    const shotTime = t0 + i * SHOT_GAP_MS;
+    scheduleCountdownAndShot(shotTime, i);
+  }
+  const totalTime = t0 + (SHOT_COUNT - 1) * SHOT_GAP_MS + 600;
+  setTimeout(() => { buildStrip(); showScreen('screen-review'); }, totalTime - Date.now());
+}
+
+function scheduleCountdownAndShot(shotTime, index) {
+  const countdownEl = document.getElementById('countdown');
+  [3, 2, 1].forEach(n => {
+    const showAt = shotTime - n * 1000;
+    setTimeout(() => {
+      countdownEl.textContent = n;
+      countdownEl.classList.remove('hidden');
+    }, Math.max(0, showAt - Date.now()));
+  });
+  setTimeout(() => {
+    countdownEl.classList.add('hidden');
+    flash();
+    capturePhoto(index);
+  }, Math.max(0, shotTime - Date.now()));
+}
+
+function flash() {
+  const f = document.getElementById('flash');
+  f.style.opacity = '0.85';
+  setTimeout(() => { f.style.transition = 'opacity .4s'; f.style.opacity = '0'; }, 60);
+  setTimeout(() => { f.style.transition = ''; }, 500);
+}
+
+function drawCover(ctx, video, x, y, w, h) {
+  const vw = video.videoWidth || 640, vh = video.videoHeight || 480;
+  const scale = Math.max(w / vw, h / vh);
+  const sw = w / scale, sh = h / scale;
+  const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
+  ctx.drawImage(video, sx, sy, sw, sh, x, y, w, h);
+}
+
+function capturePhoto(index) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640; canvas.height = 480;
+  const ctx = canvas.getContext('2d');
+  ctx.save(); ctx.translate(320, 0); ctx.scale(-1, 1);
+  drawCover(ctx, localVideo, 0, 0, 320, 480);
+  ctx.restore();
+  drawCover(ctx, remoteVideo, 320, 0, 320, 480);
+  shots[index] = canvas.toDataURL('image/jpeg', 0.92);
+}
+
+/* ---------- strip building + filters ---------- */
+const FILTER_CSS = {
+  none: 'none',
+  mono: 'grayscale(1) contrast(1.05)',
+  retro: 'sepia(0.5) saturate(1.5) hue-rotate(-10deg) contrast(1.05)',
+  film: 'contrast(1.15) brightness(0.95) saturate(0.8)'
+};
+const themeColors = { pink: '#f3b6c5', cream: '#d9c39a', blue: '#9cc3dd' };
+
+function buildStrip() { renderStrip(); }
+
+function renderStrip() {
+  const frameW = 320, frameH = 240, pad = 18, gap = 14;
+  const canvas = document.getElementById('stripCanvas');
+  canvas.width = frameW + pad * 2;
+  canvas.height = pad * 2 + shots.length * frameH + (shots.length - 1) * gap + 50;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = themeColors[selectedTheme] || '#f3b6c5';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  let loaded = 0;
+  shots.forEach((src, i) => {
+    const img = new Image();
+    img.onload = () => {
+      const y = pad + i * (frameH + gap);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(pad - 6, y - 6, frameW + 12, frameH + 12);
+      ctx.save();
+      ctx.filter = FILTER_CSS[currentFilter];
+      ctx.drawImage(img, pad, y, frameW, frameH);
+      ctx.restore();
+      loaded++;
+      if (loaded === shots.length) {
+        ctx.fillStyle = '#2b1f1c';
+        ctx.font = '600 16px Georgia, serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('made with love, far apart 🤍', canvas.width / 2, canvas.height - 18);
+      }
+    };
+    img.src = src;
+  });
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.filters button').forEach(b => b.classList.toggle('active', b.dataset.f === f));
+  renderStrip();
+}
+
+function downloadStrip() {
+  const canvas = document.getElementById('stripCanvas');
+  const a = document.createElement('a');
+  a.download = 'us-photobooth.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+</script>
+</body>
+</html>
